@@ -7,17 +7,54 @@
 //
 
 #import "TPPullRefreshViewController.h"
-#define PULL_DOWN_THRESHHOLD_VALUE -40
+#define PULL_DOWN_THRESHHOLD_VALUE 40
 #define PULL_UP_THRESHHOLD_VALUE 40
 
 @implementation TPPullRefreshView
-
-- (void)setTableViewOffset:(CGFloat)tableViewOffset
+- (id)initWithFrame:(CGRect)frame
 {
-    if (tableViewOffset < PULL_DOWN_THRESHHOLD_VALUE)
+    self = [super initWithFrame:frame];
+    if (self)
     {
-        self.state = TP_PULL_STATE_HEADREFRESHING;
+        self.activity = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleGray];
+        self.activity.center = CGPointMake(20, CGRectGetMidY(self.bounds));
+        [self addSubview:self.activity];
+        
+        
+        self.titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, frame.size.width, frame.size.height)];
+        self.titleLabel.textAlignment = NSTextAlignmentCenter;
+        [self addSubview:self.titleLabel];
+
     }
+    return self;
+}
+
+
+
+- (void)setState:(TPPULL_REFRESH_STATE)state
+{
+    if (self.state != state)
+    {
+        _state = state;
+        [self.activity stopAnimating];
+        switch (self.state) {
+            case TP_PULL_STATE_NORMAL:
+                self.titleLabel.text = @"下拉加载更多";
+                break;
+                
+            case TP_PULL_STATE_PULLING:
+                self.titleLabel.text = @"释放加载更多";
+                break;
+                
+            case TP_PULL_STATE_LOADING:
+                self.titleLabel.text = @"正在加载...";
+                [self.activity startAnimating];
+                break;
+            default:
+                break;
+        }
+    }
+    
 }
 
 @end
@@ -61,13 +98,11 @@
         }
         else
         {
-            UIActivityIndicatorView* act = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleGray];
-            act.tag = 'acti';
+
             
-            TPPullRefreshView* headView = [[TPPullRefreshView alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, act.frame.size.height + 20 )];
-            headView.backgroundColor = [UIColor greenColor];
-            act.center = CGPointMake(CGRectGetMidX(headView.bounds), CGRectGetMidY(headView.bounds));
-            [headView addSubview:act];
+            TPPullRefreshView* headView = [[TPPullRefreshView alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, 60 )];
+            headView.state = TP_PULL_STATE_NORMAL;
+            
             self.headView = headView;
             return headView;
         }
@@ -94,25 +129,99 @@
 
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context
 {
-    static TPPULL_REFRESH_STATE lastState = TP_PULL_STATE_NORMAL;
+//    static TPPULL_REFRESH_STATE lastState = TP_PULL_STATE_NORMAL;
     if ([keyPath isEqualToString:@"contentOffset"])
     {
         if (self.tableView.contentOffset.y < 0)
         {
-
-            
-            self.headView.tableViewOffset = self.tableView.contentOffset.y;
-            //if (self.headView.tale)
-            if (self.headView.state == TP_PULL_STATE_HEADREFRESHING && lastState != TP_PULL_STATE_HEADREFRESHING)
+            CGFloat tableViewOffset = self.tableView.contentOffset.y;
+            if (self.headView.state == TP_PULL_STATE_LOADING)
             {
-                CGFloat height = self.headView.height;
-                self.tableView.contentInset = UIEdgeInsetsMake(height, 0, 0, 0);
-                [((UIActivityIndicatorView*)[self.headView viewWithTag:'acti']) startAnimating];
-                [self startHeaderRefresh];
+
             }
-            lastState = self.headView.state;
+            else
+            {
+                BOOL loading = NO;
+                if ([self respondsToSelector:@selector(refreshTableHeaderDataSourceIsLoading)]) {
+                    loading = [self refreshTableHeaderDataSourceIsLoading];
+                }
+                
+                if (self.headView.state == TP_PULL_STATE_PULLING && tableViewOffset > -PULL_DOWN_THRESHHOLD_VALUE && tableViewOffset < 0.0f && !loading)
+                {
+                    [self.headView setState:TP_PULL_STATE_NORMAL];
+                }
+                else if (self.headView.state == TP_PULL_STATE_NORMAL && tableViewOffset < -PULL_DOWN_THRESHHOLD_VALUE && !loading)
+                {
+                    [self.headView setState:TP_PULL_STATE_PULLING];
+                }
+                
+                if (self.tableView.contentInset.top != 0) {
+                    self.tableView.contentInset = UIEdgeInsetsZero;
+                }
+            }
+            
+//            self.headView.tableViewOffset = self.tableView.contentOffset.y;
+//            //if (self.headView.tale)
+//            if (self.headView.state == TP_PULL_STATE_HEADREFRESHING && lastState != TP_PULL_STATE_HEADREFRESHING)
+//            {
+//                CGFloat height = self.headView.height;
+//                self.tableView.contentInset = UIEdgeInsetsMake(height, 0, 0, 0);
+//                [((UIActivityIndicatorView*)[self.headView viewWithTag:'acti']) startAnimating];
+//                [self startHeaderRefresh];
+//            }
         }
+//        lastState = self.headView.state;
+
     }
+}
+
+
+- (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate
+{
+    BOOL loading = NO;
+	if ([self respondsToSelector:@selector(refreshTableHeaderDataSourceIsLoading)])
+    {
+		loading = [self refreshTableHeaderDataSourceIsLoading];
+	}
+	
+	if (scrollView.contentOffset.y <= -PULL_DOWN_THRESHHOLD_VALUE && !loading)
+    {
+		
+		if ([self respondsToSelector:@selector(refreshTableHeaderDidTriggerRefresh)])
+        {
+			[self refreshTableHeaderDidTriggerRefresh];
+		}
+		
+		[self.headView setState:TP_PULL_STATE_LOADING];
+        [UIView animateWithDuration:0.3 animations:^{
+            CGFloat height = self.headView.height;
+            self.tableView.contentInset = UIEdgeInsetsMake(height, 0, 0, 0);
+        }];
+
+    }
+		
+}
+
+- (void)refreshScrollViewDataSourceDidFinishedLoading
+{
+    self.reloading = NO;
+    
+    [UIView animateWithDuration:0.3 animations:^{
+        self.tableView.contentInset = UIEdgeInsetsMake(0, 0, 0, 0);
+    }];
+	
+	[self.headView setState:TP_PULL_STATE_NORMAL];
+    
+}
+
+- (BOOL)refreshTableHeaderDataSourceIsLoading
+{
+    return self.reloading;
+}
+    
+- (void)refreshTableHeaderDidTriggerRefresh
+{
+    self.reloading = YES;
 }
 
 - (void)didReceiveMemoryWarning
@@ -121,10 +230,6 @@
     // Dispose of any resources that can be recreated.
 }
 
-- (void)startHeaderRefresh
-{
-    
-}
 
 
 - (void)finishHeaderLoading

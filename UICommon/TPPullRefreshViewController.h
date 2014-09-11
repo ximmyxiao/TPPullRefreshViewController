@@ -9,6 +9,15 @@
 #import <UIKit/UIKit.h>
 @class TPPullRefreshView;
 
+@protocol TPPullRefreshHeadViewDelegate
+@optional
+- (void)refreshScrollViewDataSourceDidFinishedLoading;
+- (BOOL)refreshTableHeaderDataSourceIsLoading;
+- (void)refreshTableHeaderDidTriggerRefresh;
+
+@end
+
+
 @protocol TPPullRefreshHeadViewDataSource
 @optional
 - (TPPullRefreshView*)headViewForPullRefresh;
@@ -17,20 +26,21 @@
 typedef enum TPPULL_REFRESH_STATE
 {
     TP_PULL_STATE_NORMAL = 0,
-    TP_PULL_STATE_HEADREFRESHING,
-    TP_PULL_STATE_FOOTERREFRESHING,
+    TP_PULL_STATE_PULLING,
+    TP_PULL_STATE_LOADING,
 }TPPULL_REFRESH_STATE;
 
 @interface TPPullRefreshView : UIView
 @property(nonatomic,assign) TPPULL_REFRESH_STATE state;
-@property(nonatomic,assign) CGFloat tableViewOffset;
+@property(nonatomic,strong) UILabel* titleLabel;
+@property(nonatomic,strong) UIActivityIndicatorView* activity;
 @end
 
 
-@interface TPPullRefreshViewController : UIViewController<TPPullRefreshHeadViewDataSource>
+@interface TPPullRefreshViewController : UIViewController<TPPullRefreshHeadViewDataSource,TPPullRefreshHeadViewDelegate>
 {
     TPPullRefreshView* _headView;
 }
-- (void)startHeaderRefresh;
+@property(nonatomic,assign) BOOL reloading;
 - (void)finishHeaderLoading;
 @end
